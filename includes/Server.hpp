@@ -24,4 +24,5 @@ private:
     void handleClientData(int fd);
 	void processCommand (Client &client, const std::string &message);
     void removeClient(int fd);
+    void sendError(Client &client, const std::string &msg);
 };

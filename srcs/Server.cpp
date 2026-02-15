@@ -140,6 +140,10 @@ void Server::handleClientData(int fd) {
 		if (!line.empty() && line[line.size() - 1] == '\r')
 			line.erase(line.size() - 1);
 
+		// 빈 라인은 무시
+		if (line.empty())
+			continue;
+
         // line = 실제 IRC 명령
         std::cout << "Received command from fd " << fd << ": " << line << std::endl;
 		processCommand(client, line);
@@ -151,29 +155,88 @@ void Server::processCommand(Client &client, const std::string &message) {
     std::string cmd;
     iss >> cmd;
 
+    if (cmd.empty())
+        return;
+
     if (cmd == "PASS") {
         std::string pass;
         iss >> pass;
         if (pass != _password) {
-            send(client.fd, "ERROR :Invalid password\n", 24, 0);
-            removeClient(client.fd);
+            sendError(client, "Invalid password");
+            return;
         }
-    } else if (cmd == "NICK") {
-        iss >> client.nick;
-    } else if (cmd == "USER") {
+        client.passOk = true;
+    }
+    else if (cmd == "NICK") {
+        std::string nick;
+        iss >> nick;
+        if (nick.empty()) {
+            sendError(client, "Nickname is required");
+            return;
+        }
+        client.nick = nick;
+    }
+    else if (cmd == "USER") {
+        if (!client.passOk) {
+            sendError(client, "You must send PASS first");
+            return;
+        }
+        if (client.nick.empty()) {
+            sendError(client, "You must set NICK first");
+            return;
+        }
+
         std::string username;
         iss >> username;
+        if (username.empty()) {
+            sendError(client, "Username is required");
+            return;
+        }
+
         client.user = username;
-        client.authed = true; // 인증 완료
+        client.authed = true;
 
         std::string welcome = ":ircserv 001 " + client.nick + " :Welcome!\r\n";
-        send(client.fd, welcome.c_str(), welcome.size(), 0);
-    } else {
+        int bytesSent = send(client.fd, welcome.c_str(), welcome.size(), 0);
+        if (bytesSent < 0) {
+            std::cerr << "Send failed for fd " << client.fd << std::endl;
+            removeClient(client.fd);
+        }
+    }
+    else {
         if (!client.authed) {
-            send(client.fd, "ERROR :You must register first\n", 31, 0);
-        } else {
-            // 나중에 PRIVMSG, JOIN 등 처리
+            sendError(client, "You must register first");
+        }
+        else {
+            // 이후 PRIVMSG, JOIN 등 처리
         }
     }
 }
 
+
+void Server::sendError(Client &client, const std::string &msg)
+{
+    std::string error = "ERROR :" + msg + "\r\n";
+    int bytesSent = send(client.fd, error.c_str(), error.size(), 0);
+    if (bytesSent < 0)
+	{
+        std::cerr << "Send failed for fd " << client.fd << std::endl;
+        removeClient(client.fd);
+    }
+}
+
+void Server::removeClient(int fd) {
+    // pollfd에서 제거
+    for (size_t i = 0; i < _pfds.size(); ++i) {
+        if (_pfds[i].fd == fd) {
+            _pfds.erase(_pfds.begin() + i);
+            break;
+        }
+    }
+
+    // 클라이언트 맵에서 제거
+    _clients.erase(fd);
+
+    // 소켓 닫기
+    close(fd);
+}
