@@ -25,4 +25,11 @@ private:
 	void processCommand (Client &client, const std::string &message);
     void removeClient(int fd);
     void sendError(Client &client, const std::string &msg);
+    void handleJoin(Client &client, std::istringstream &iss);
+    Channel& getOrCreateChannel(const std::string &name);
+    void broadcastToChannel(Channel &chan, const std::string &msg);
+
+	void handlePrivmsg(Client &client, std::istringstream &iss);
+	Client* findClientByNick(const std::string &nick);
+	void sendToChannel(const std::string &channel, const std::string &msg, int exceptFd);
 };

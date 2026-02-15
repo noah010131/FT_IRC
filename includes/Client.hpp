@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include <set>
 
 class Client {
 public:
@@ -9,6 +10,7 @@ public:
     std::string user;
     bool authed;
 	bool passOk;
+    std::set<std::string> joinedChannels;
 
     Client();
     Client(int fd);

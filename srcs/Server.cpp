@@ -125,6 +125,7 @@ void Server::handleClientData(int fd) {
 	if (client.buffer.size() + bytes > MAX_BUFFER)
 	{
 		std::cerr << "Buffer overflow from fd " << fd << std::endl;
+		removeClient(fd);
 		return;
 	}
 	
@@ -204,12 +205,20 @@ void Server::processCommand(Client &client, const std::string &message) {
         }
     }
     else {
-        if (!client.authed) {
+        if (!client.authed)
+		{
             sendError(client, "You must register first");
+			return;
         }
-        else {
-            // 이후 PRIVMSG, JOIN 등 처리
-        }
+        else if (cmd == "JOIN")
+		{
+			handleJoin(client, iss);
+		}
+		else if (cmd == "PRIVMSG")
+		{
+			handlePrivmsg(client, iss);
+		}
+		
     }
 }
 
@@ -225,18 +234,189 @@ void Server::sendError(Client &client, const std::string &msg)
     }
 }
 
-void Server::removeClient(int fd) {
+void Server::removeClient(int fd)
+{
+    std::map<int, Client>::iterator clientIt = _clients.find(fd);
+    if (clientIt != _clients.end())
+    {
+        Client &client = clientIt->second;
+
+        // 지울 채널 이름 따로 수집 (iterator 무효화 방지)
+        std::vector<std::string> emptyChannels;
+
+        for (std::set<std::string>::iterator it = client.joinedChannels.begin();
+             it != client.joinedChannels.end(); ++it)
+        {
+            std::map<std::string, Channel>::iterator chanIt = _channels.find(*it);
+            if (chanIt != _channels.end())
+            {
+                chanIt->second.clients.erase(fd);
+
+                if (chanIt->second.clients.empty())
+                    emptyChannels.push_back(chanIt->first);
+            }
+        }
+
+        // 빈 채널 삭제 (반복 끝난 후)
+        for (size_t i = 0; i < emptyChannels.size(); ++i)
+            _channels.erase(emptyChannels[i]);
+    }
+
     // pollfd에서 제거
-    for (size_t i = 0; i < _pfds.size(); ++i) {
-        if (_pfds[i].fd == fd) {
+    for (size_t i = 0; i < _pfds.size(); ++i)
+    {
+        if (_pfds[i].fd == fd)
+        {
             _pfds.erase(_pfds.begin() + i);
             break;
         }
     }
 
-    // 클라이언트 맵에서 제거
+    close(fd);
     _clients.erase(fd);
 
-    // 소켓 닫기
-    close(fd);
+    std::cout << "Client disconnected: " << fd << std::endl;
 }
+
+
+Channel& Server::getOrCreateChannel(const std::string &name)
+{
+    std::map<std::string, Channel>::iterator it = _channels.find(name);
+    if (it == _channels.end())
+	{
+        _channels.insert(std::make_pair(name, Channel(name)));
+        it = _channels.find(name);
+    }
+    return it->second;
+}
+
+void Server::broadcastToChannel(Channel &chan, const std::string &msg)
+{
+	for (std::set<int>::iterator it = chan.clients.begin();
+	     it != chan.clients.end(); )
+	{
+		std::set<int>::iterator current = it;
+		++it;
+
+		int fd = *current;
+		int bytesSent = send(fd, msg.c_str(), msg.size(), 0);
+		if (bytesSent < 0)
+		{
+			std::cerr << "Send failed for fd " << fd << std::endl;
+			removeClient(fd);
+		}
+	}
+}
+
+
+void Server::handleJoin(Client &client, std::istringstream &iss)
+{
+    std::string channelName;
+    iss >> channelName;
+    if (channelName.empty()) return;
+
+    Channel &chan = getOrCreateChannel(channelName);
+    chan.clients.insert(client.fd);
+    client.joinedChannels.insert(channelName);
+
+    std::string joinMsg = ":" + client.nick + " JOIN " + channelName + "\r\n";
+    broadcastToChannel(chan, joinMsg);
+}
+
+Client* Server::findClientByNick(const std::string &nick)
+{
+    for (std::map<int, Client>::iterator it = _clients.begin();
+         it != _clients.end();
+         ++it)
+    {
+        if (it->second.nick == nick)
+            return &it->second;
+    }
+    return NULL;
+}
+
+void Server::sendToChannel(const std::string &channel, const std::string &msg, int exceptFd)
+{
+    std::map<std::string, Channel>::iterator it = _channels.find(channel);
+    if (it == _channels.end())
+        return;
+
+    Channel &chan = it->second;
+
+    for (std::set<int>::iterator fdIt = chan.clients.begin();
+         fdIt != chan.clients.end(); )
+    {
+        std::set<int>::iterator current = fdIt;
+        ++fdIt;
+
+        int fd = *current;
+        if (fd != exceptFd)
+        {
+            int bytesSent = send(fd, msg.c_str(), msg.size(), 0);
+            if (bytesSent < 0)
+            {
+                std::cerr << "Send failed for fd " << fd << std::endl;
+                removeClient(fd);
+            }
+        }
+    }
+}
+
+
+void Server::handlePrivmsg(Client &client, std::istringstream &iss)
+{
+    if (!client.authed)
+    {
+        sendError(client, "You must register first");
+        return;
+    }
+
+    std::string target;
+    iss >> target;
+
+    if (target.empty())
+    {
+        sendError(client, "No recipient given");
+        return;
+    }
+
+    std::string message;
+    std::getline(iss, message);
+	
+
+    if (message.size() > 0 && message[0] == ' ')
+        message.erase(0, 1);
+	if (message.size() > 0 && message[0] == ':')
+        message.erase(0, 1);
+
+    if (message.empty())
+    {
+        sendError(client, "No text to send");
+        return;
+    }
+
+	// 채널 우선
+	std::map<std::string, Channel>::iterator chanIt = _channels.find(target);
+    if (chanIt != _channels.end())
+    {
+        std::string full = ":" + client.nick + " PRIVMSG " + target + " :" + message + "\r\n";
+        sendToChannel(target, full, client.fd);
+        return;
+    }
+
+    // 닉네임
+    std::map<int, Client>::iterator it;
+    for (it = _clients.begin(); it != _clients.end(); ++it)
+    {
+        if (it->second.nick == target)
+        {
+            std::string full = ":" + client.nick + " PRIVMSG " + target + " :" + message + "\r\n";
+            send(it->second.fd, full.c_str(), full.size(), 0);
+            return;
+        }
+    }
+
+    sendError(client, "No such nick/channel");
+}
+
+
