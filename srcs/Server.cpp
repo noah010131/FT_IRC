@@ -120,7 +120,7 @@ void Server::handleClientData(int fd)
 	}
 	
 
-    buf[bytes] = '\0';
+    //buf[bytes] = '\0';
     Client &client = _clients[fd];
 
 	const size_t MAX_BUFFER = 4096;
@@ -132,7 +132,8 @@ void Server::handleClientData(int fd)
 		return;
 	}
 	
-    client.buffer += buf; // 기존 버퍼에 누적
+    //client.buffer += buf; // 기존 버퍼에 누적
+    client.buffer.append(buf, bytes);
 	
 	size_t pos;
 
