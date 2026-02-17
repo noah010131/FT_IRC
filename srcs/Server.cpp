@@ -442,6 +442,13 @@ void Server::handlePrivmsg(Client &client, std::istringstream &iss)
 	std::map<std::string, Channel>::iterator chanIt = _channels.find(target);
     if (chanIt != _channels.end())
     {
+        Channel &chan = chanIt->second;
+
+        if (chan.clients.find(client.fd) == chan.clients.end())
+        {
+            sendError(client, "You are not on that channel");
+            return;
+        }
         std::string full = ":" + client.nick + " PRIVMSG " + target + " :" + message + "\r\n";
         sendToChannel(target, full, client.fd);
         return;
