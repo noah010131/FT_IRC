@@ -96,17 +96,20 @@ void Server::acceptNewClient() {
     std::cout << "New client connected: " << clientFd << std::endl;
 }
 
-void Server::handleClientData(int fd) {
+void Server::handleClientData(int fd)
+{
     char buf[512]; // IRC 최대 길이 미만
     int bytes = recv(fd, buf, sizeof(buf) - 1, 0);
 
-    if (bytes == 0) {
-		// 연결 종료
+    // 연결 종료
+    if (bytes == 0)
+    {
 		std::cout << "Client disconnected: " << fd << std::endl;
 		removeClient(fd);
 		return;
 	}
-	if (bytes < 0) {
+	if (bytes < 0)
+    {
 		if (errno == EWOULDBLOCK || errno == EAGAIN) {
 			// non-blocking, 일시적 없음 → 무시
 			return;
@@ -133,7 +136,8 @@ void Server::handleClientData(int fd) {
 	
 	size_t pos;
 
-	while ((pos = client.buffer.find("\n")) != std::string::npos) {
+	while ((pos = client.buffer.find("\n")) != std::string::npos)
+    {
         std::string line = client.buffer.substr(0, pos);
         client.buffer.erase(0, pos + 1); // 처리한 부분 제거
 
@@ -158,38 +162,44 @@ void Server::processCommand(Client &client, const std::string &message) {
 
     if (cmd.empty())
         return;
-
-    if (cmd == "PASS") {
+    if (cmd == "PASS")
+    {
         std::string pass;
         iss >> pass;
-        if (pass != _password) {
+        if (pass != _password)
+        {
             sendError(client, "Invalid password");
             return;
         }
         client.passOk = true;
     }
-    else if (cmd == "NICK") {
+    else if (cmd == "NICK")
+    {
         std::string nick;
         iss >> nick;
-        if (nick.empty()) {
+        if (nick.empty())
+        {
             sendError(client, "Nickname is required");
             return;
         }
         client.nick = nick;
     }
-    else if (cmd == "USER") {
-        if (!client.passOk) {
+    else if (cmd == "USER")
+    {
+        if (!client.passOk)
+        {
             sendError(client, "You must send PASS first");
             return;
         }
-        if (client.nick.empty()) {
+        if (client.nick.empty())
+        {
             sendError(client, "You must set NICK first");
             return;
         }
-
         std::string username;
         iss >> username;
-        if (username.empty()) {
+        if (username.empty())
+        {
             sendError(client, "Username is required");
             return;
         }
@@ -204,7 +214,16 @@ void Server::processCommand(Client &client, const std::string &message) {
             removeClient(client.fd);
         }
     }
-    else {
+    else if (cmd == "MODE")
+    {
+        std::string chanName;
+        iss >> chanName;
+        std::string modeStr;
+        iss >> modeStr;
+        handleMode(client, chanName, modeStr, iss);
+    }
+    else
+    {
         if (!client.authed)
 		{
             sendError(client, "You must register first");
@@ -221,7 +240,6 @@ void Server::processCommand(Client &client, const std::string &message) {
 		
     }
 }
-
 
 void Server::sendError(Client &client, const std::string &msg)
 {
@@ -308,17 +326,42 @@ void Server::broadcastToChannel(Channel &chan, const std::string &msg)
 	}
 }
 
-
 void Server::handleJoin(Client &client, std::istringstream &iss)
 {
     std::string channelName;
-    iss >> channelName;
+    std::string key;
+    iss >> channelName >> key;
     if (channelName.empty()) return;
 
     Channel &chan = getOrCreateChannel(channelName);
+
+    // invite-only 체크
+    if (chan.inviteOnly && chan.invited.find(client.fd) == chan.invited.end())
+    {
+        sendError(client, "Invite only channel");
+        return;
+    }
+    
+    if (!chan.key.empty() && chan.key != key)
+    {
+        if (key.empty())
+            sendError(client, "this channel needs key");
+        else
+            sendError(client, "Bad Channel key");
+        return;
+    }
+    // 유저 제한 체크 (+l)
+    if (chan.userLimit > 0 && (size_t)chan.clients.size() >= chan.userLimit)
+    {
+        sendError(client, "Channel is full");
+        return;
+    }
     chan.clients.insert(client.fd);
     client.joinedChannels.insert(channelName);
 
+    if (chan.clients.size() == 1)
+        chan.operators.insert(client.fd);
+        
     std::string joinMsg = ":" + client.nick + " JOIN " + channelName + "\r\n";
     broadcastToChannel(chan, joinMsg);
 }
@@ -419,4 +462,132 @@ void Server::handlePrivmsg(Client &client, std::istringstream &iss)
     sendError(client, "No such nick/channel");
 }
 
+void Server::handleMode(Client &client, const std::string &chanName, const std::string &modeStr, std::istringstream &iss)
+{
+    std::map<std::string, Channel>::iterator it = _channels.find(chanName);
+    if (it == _channels.end())
+    {
+        sendError(client, "No such channel");
+        return;
+    }
+    Channel &chan = it->second;
+// operator 체크
+    if (chan.operators.find(client.fd) == chan.operators.end())
+    {
+        sendError(client, "You're not channel operator");
+        return;
+    }
 
+    char action = modeStr[0]; // + 또는 -
+    for (size_t i = 1; i < modeStr.size(); ++i)
+    {
+        char m = modeStr[i];
+        if (m == '+' || m == '-')
+        {
+            action = m;
+            continue;
+        }
+
+        if (!action)
+        {
+            sendError(client, "Mode action (+/-) missing");
+            return ;
+        }
+        switch (m)
+        {
+            case 'i':
+                chan.inviteOnly = (action == '+');
+                break;
+            case 't':
+                chan.topicRestricted = (action == '+');
+                break;
+            case 'k':
+            {
+                std::string key;
+                iss >> key;
+                if (action == '+')
+                {
+                    if (key.empty())
+                    {
+                        sendError(client, "Need key for +k");
+                        return;
+                    }
+                    if (key.length() > 32)
+                    {
+                        sendError(client, "key too long (>32)");
+                        return;
+                    }
+                    chan.key = key;
+                }
+                else if (action == '-')
+                    chan.key.clear();
+                break;
+            }
+            case 'o':
+            {
+                std::string nick;
+                iss >> nick;
+                if (nick.empty())
+                {
+                    sendError(client, "Need nickname for +o/-o");
+                    return;
+                }
+                int fd = getFdByNick(nick);
+                if (fd == -1)
+                {
+                    sendError(client, "No such nick");
+                    return;
+                }
+                if (action == '+')
+                    chan.operators.insert(fd);
+                else if (action == '-')
+                    chan.operators.erase(fd);
+                break;
+            }
+            case 'l':
+            {
+            int limit = 0;
+            if (action == '+')
+            {
+                iss >> limit;
+                if (!limit)
+                {
+                    sendError(client, "Need limit for +l");
+                    return;
+                }
+                if (limit <= 0)
+                {
+                    sendError(client, "Invalid user limit");
+                    return;
+                }
+                if (limit > 99999)
+                {
+                    sendError(client, "user limit too big (>99999)");
+                    return;
+                }
+                chan.userLimit = limit;
+            }
+            else if (action == '-')
+                chan.userLimit = 0;
+            break;
+            }
+            default :
+                sendError(client, "Unknown mode");
+                return;
+        }
+    }
+    // 변경 완료 메시지 브로드캐스트
+    std::string msg = ":" + client.nick + " MODE " + chanName + " " + modeStr + "\r\n";
+    broadcastToChannel(chan, msg);
+}
+
+int Server::getFdByNick(const std::string &nick)
+{
+    std::map<int, Client>::iterator it = _clients.begin();
+    for (; it != _clients.end(); ++it)
+    {
+        if (it->second.nick == nick)
+            return it->first; // fd 반환
+    }
+    return -1; // 못 찾음
+}

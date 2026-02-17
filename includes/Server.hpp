@@ -32,4 +32,7 @@ private:
 	void handlePrivmsg(Client &client, std::istringstream &iss);
 	Client* findClientByNick(const std::string &nick);
 	void sendToChannel(const std::string &channel, const std::string &msg, int exceptFd);
+    void handleMode(Client &client, const std::string &chanName, const std::string &modeStr, std::istringstream &iss);
+    int getFdByNick(const std::string &nick);
+
 };
