@@ -214,14 +214,6 @@ void Server::processCommand(Client &client, const std::string &message) {
             removeClient(client.fd);
         }
     }
-    else if (cmd == "MODE")
-    {
-        std::string chanName;
-        iss >> chanName;
-        std::string modeStr;
-        iss >> modeStr;
-        handleMode(client, chanName, modeStr, iss);
-    }
     else
     {
         if (!client.authed)
@@ -230,14 +222,25 @@ void Server::processCommand(Client &client, const std::string &message) {
 			return;
         }
         else if (cmd == "JOIN")
-		{
 			handleJoin(client, iss);
-		}
 		else if (cmd == "PRIVMSG")
-		{
 			handlePrivmsg(client, iss);
-		}
-		
+        else if (cmd == "MODE")
+        {
+            std::string chanName;
+            iss >> chanName;
+            std::string modeStr;
+            iss >> modeStr;
+            handleMode(client, chanName, modeStr, iss);
+        }
+        else if (cmd == "KICK")
+            handleKick(client, iss);
+        else if (cmd == "INVITE")
+            handleInvite(client, iss);
+        else if (cmd == "TOPIC")
+            handleTopic(client, iss);
+        else
+            sendError(client, "Unknown command: " + cmd);
     }
 }
 
@@ -597,4 +600,121 @@ int Server::getFdByNick(const std::string &nick)
             return it->first; // fd 반환
     }
     return -1; // 못 찾음
+}
+
+void Server::handleKick(Client &client, std::istringstream &iss)
+{
+    std::string chanName, nick;
+    iss >> chanName >> nick;
+    if (chanName.empty() || nick.empty()) {
+        sendError(client, "Need channel and nickname for KICK");
+        return;
+    }
+
+    std::map<std::string, Channel>::iterator it = _channels.find(chanName);
+    if (it == _channels.end()) {
+        sendError(client, "No such channel");
+        return;
+    }
+    Channel &chan = it->second;
+
+    // operator 체크
+    if (chan.operators.find(client.fd) == chan.operators.end()) {
+        sendError(client, "You're not channel operator");
+        return;
+    }
+
+    int fd = getFdByNick(nick);
+    if (fd == -1 || chan.clients.find(fd) == chan.clients.end()) {
+        sendError(client, "No such nick in channel");
+        return;
+    }
+
+    _clients[fd].joinedChannels.erase(chanName);
+    sendToChannel(chanName, ":" + client.nick + " KICK " + chanName + " " + nick + "\r\n", client.fd);
+
+    // 클라이언트 제거
+    chan.clients.erase(fd);
+    _clients[fd].joinedChannels.erase(chanName);
+    chan.invited.erase(fd);
+
+    // 채널이 비어있으면 삭제
+    if (chan.clients.empty())
+        _channels.erase(chanName);
+}
+
+void Server::handleInvite(Client &client, std::istringstream &iss)
+{
+    std::string nick, chanName;
+    iss >> nick >> chanName;
+    if (nick.empty() || chanName.empty()) {
+        sendError(client, "Need nickname and channel for INVITE");
+        return;
+    }
+
+    std::map<std::string, Channel>::iterator it = _channels.find(chanName);
+    if (it == _channels.end()) {
+        sendError(client, "No such channel");
+        return;
+    }
+    Channel &chan = it->second;
+
+    // operator 체크
+    if (chan.operators.find(client.fd) == chan.operators.end()) {
+        sendError(client, "You're not channel operator");
+        return;
+    }
+
+    int fd = getFdByNick(nick);
+    if (fd == -1) {
+        sendError(client, "No such nick");
+        return;
+    }
+
+    chan.invited.insert(fd); // 초대 목록에 추가
+    std::string msg = ":" + client.nick + " INVITE " + nick + " :" + chanName + "\r\n";
+    send(fd, msg.c_str(), msg.size(), 0);
+}
+
+void Server::handleTopic(Client &client, std::istringstream &iss)
+{
+    std::string chanName;
+    iss >> chanName;
+    if (chanName.empty()) {
+        sendError(client, "Need channel for TOPIC");
+        return;
+    }
+
+    std::map<std::string, Channel>::iterator it = _channels.find(chanName);
+    if (it == _channels.end()) {
+        sendError(client, "No such channel");
+        return;
+    }
+    Channel &chan = it->second;
+
+    // 메시지로 topic 가져오기
+    std::string topic;
+    std::getline(iss, topic);
+    if (!topic.empty() && topic[0] == ' ')
+        topic.erase(0, 1);
+    if (!topic.empty() && topic[0] == ':')
+        topic.erase(0, 1);
+
+    if (topic.empty()) {
+        // topic 조회
+        std::string msg = ":" + chan.name + " TOPIC " + chanName + " :" + chan.topic + "\r\n";
+        send(client.fd, msg.c_str(), msg.size(), 0);
+        return;
+    }
+
+    // topic 변경
+    if (chan.topicRestricted && chan.operators.find(client.fd) == chan.operators.end())
+    {
+        sendError(client, "You are not channel operator");
+        return;
+    }
+
+    chan.topic = topic;
+    std::string msg = ":" + client.nick + " TOPIC " + chanName + " :" + topic + "\r\n";
+    sendToChannel(chanName, msg, client.fd);
 }
