@@ -3,6 +3,7 @@
 #include <vector>
 #include <string>
 #include <poll.h>
+#include <csignal>
 
 #include "Client.hpp"
 #include "Channel.hpp"
@@ -42,11 +43,12 @@ private:
     std::map<std::string, Channel> _channels;
     std::string _password;
 
+
 public:
     Server(int port, const std::string& password);
     void run();
+    void shutdown();
 
-private:
     void acceptNewClient();
     void handleClientData(int fd);
 	void processCommand (Client &client, const std::string &message);
@@ -66,4 +68,5 @@ private:
     void handleInvite(Client &client, std::istringstream &iss);
     void handleTopic(Client &client, std::istringstream &iss);
 
+    static Server* _instance;
 };

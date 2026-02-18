@@ -8,6 +8,35 @@
 #include <cerrno>
 #include <sstream>
 
+Server* Server::_instance = NULL;
+
+void handleSignal(int sig)
+{
+    (void)sig;
+    if (Server::_instance)
+        Server::_instance->shutdown();
+    std::exit(0);
+}
+
+// 안전 종료
+void Server::shutdown()
+{
+    std::cout << "\nShutting down server...\n";
+
+    for (std::map<int, Client>::iterator it = _clients.begin(); it != _clients.end(); ++it)
+    {
+        int fd = it->first;
+        std::string quitMsg = ":ircserv ERROR :Server shutting down\r\n";
+        send(fd, quitMsg.c_str(), quitMsg.size(), 0);
+        close(fd);
+    }
+
+    _clients.clear();
+    _channels.clear();
+    _pfds.clear();
+    std::cout << "Server terminated cleanly.\n";
+}
+
 Server::Server(int port, const std::string& password)
     : _password(password) {
 
@@ -54,6 +83,11 @@ Server::Server(int port, const std::string& password)
 }
 
 void Server::run() {
+
+    _instance = this;
+    signal(SIGPIPE, SIG_IGN);
+    signal(SIGINT, handleSignal);
+    signal(SIGTERM, handleSignal);
 	/* poll: 소켓 상태 확인 */
 	/* &_pfds[0]: 파일 디스크립터 배열 */
 	/* _pfds.size(): 파일 디스크립터 배열 크기 */
