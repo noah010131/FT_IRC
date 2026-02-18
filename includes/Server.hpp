@@ -11,6 +11,9 @@
 #define RPL_WELCOME "001"
 #define RPL_INVITING "341"
 
+#define RPL_NOTOPIC "331"
+#define RPL_TOPIC "332"
+
 #define ERR_UNKNOWNCOMMAND "421"
 
 #define ERR_NEEDMOREPARAMS "461"
@@ -26,16 +29,19 @@
 
 #define ERR_NOSUCHCHANNEL "403"
 #define ERR_NOTONCHANNEL "442"
+#define ERR_USERNOTINCHANNEL "441"
 #define ERR_USERONCHANNEL "443"
 #define ERR_CHANOPRIVSNEEDED "482"
 #define ERR_BADCHANNELKEY "475"
 #define ERR_INVITEONLYCHAN "473"
+
 #define ERR_UNKNOWNMODE "472"
 #define ERR_CHANNELISFULL "471"
 #define ERR_NICKNAMEINUSE "433"
 #define ERR_INVALIDMODEPARAMS "696"
 
-class Server {
+class Server
+{
 private:
     int _listenFd;
     std::vector<struct pollfd> _pfds;
@@ -62,8 +68,13 @@ public:
 	Client* findClientByNick(const std::string &nick);
 	void sendToChannel(const std::string &channel, const std::string &msg, int exceptFd);
     void handleMode(Client &client, const std::string &chanName, const std::string &modeStr, std::istringstream &iss);
+
     bool nickExists(const std::string &nick) const;
+    bool isValidUser(const std::string& user, Client &client);
+    bool isValidNick(const std::string& nick, Client &client);
     int getFdByNick(const std::string &nick);
+    std::string getNickByFd(int fd);
+
     void handleKick(Client &client, std::istringstream &iss);
     void handleInvite(Client &client, std::istringstream &iss);
     void handleTopic(Client &client, std::istringstream &iss);
