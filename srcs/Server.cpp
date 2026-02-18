@@ -169,17 +169,17 @@ void Server::processCommand(Client &client, const std::string &message) {
         iss >> pass;
         if (pass.empty())
         {
-            sendError(client, ERR_NEEDMOREPARAMS, "PASS :Not enough parameters");
+            sendMsg(client, ERR_NEEDMOREPARAMS, "PASS :Not enough parameters");
             return;
         }
         if (pass != _password)
         {
-            sendError(client, ERR_PASSWDMISMATCH, "Password incorrect");
+            sendMsg(client, ERR_PASSWDMISMATCH, "Password incorrect");
             return;
         }
         if (client.passOk)
         {
-            sendError(client, ERR_ALREADYREGISTRED, "You may not register");
+            sendMsg(client, ERR_ALREADYREGISTRED, "You may not register");
             return;
         }
         client.passOk = true;
@@ -190,17 +190,17 @@ void Server::processCommand(Client &client, const std::string &message) {
         iss >> nick;
         if (nick.empty())
         {
-            sendError(client, ERR_NEEDMOREPARAMS, "NICK :Not enough parameters");
+            sendMsg(client, ERR_NEEDMOREPARAMS, "NICK :Not enough parameters");
             return;
         }
         else if (nickExists(nick))
         {
-            sendError(client, ERR_NICKNAMEINUSE, "Nickname is already in use");
+            sendMsg(client, ERR_NICKNAMEINUSE, "Nickname is already in use");
             return;
         }
         else if (nick[0] == '#')
         {
-            sendError(client, ERR_ERRONEUSNICKNAME, "Erroneus nickname");
+            sendMsg(client, ERR_ERRONEUSNICKNAME, "Erroneus nickname");
              return;
         }
         client.nick = nick;
@@ -209,41 +209,36 @@ void Server::processCommand(Client &client, const std::string &message) {
     {
         if (!client.passOk)
         {
-            sendError(client, ERR_NOTREGISTERED, "You must send PASS first");
+            sendMsg(client, ERR_NOTREGISTERED, "You must send PASS first");
             return;
         }
         if (client.nick.empty())
         {
-            sendError(client, ERR_NOTREGISTERED, "You must set NICK first");
+            sendMsg(client, ERR_NOTREGISTERED, "You must set NICK first");
             return;
         }
         std::string username;
         iss >> username;
         if (username.empty())
         {
-            sendError(client, ERR_NEEDMOREPARAMS, "USER :Not enough parameters");
+            sendMsg(client, ERR_NEEDMOREPARAMS, "USER :Not enough parameters");
             return;
         }
         client.user = username;
         if (client.authed)
         {
-            sendError(client, ERR_ALREADYREGISTRED, "You may not reregister");
+            sendMsg(client, ERR_ALREADYREGISTRED, "You may not reregister");
             return;
         }
         client.authed = true;
 
-        std::string welcome = ":ircserv 001 " + client.nick + " :Welcome!\r\n";
-        int bytesSent = send(client.fd, welcome.c_str(), welcome.size(), 0);
-        if (bytesSent < 0) {
-            std::cerr << "Send failed for fd " << client.fd << std::endl;
-            removeClient(client.fd);
-        }
+        sendMsg(client, RPL_WELCOME, ":Welcome!");
     }
     else
     {
         if (!client.authed)
 		{
-            sendError(client, ERR_NOTREGISTERED, "You must register first");
+            sendMsg(client, ERR_NOTREGISTERED, "You must register first");
 			return;
         }
         else if (cmd == "JOIN")
@@ -265,7 +260,7 @@ void Server::processCommand(Client &client, const std::string &message) {
         else if (cmd == "TOPIC")
             handleTopic(client, iss);
         else
-            sendError(client, ERR_UNKNOWNCOMMAND, cmd + " :Unknown command");
+            sendMsg(client, ERR_UNKNOWNCOMMAND, cmd + " :Unknown command");
     }
 }
 
@@ -280,7 +275,7 @@ bool Server::nickExists(const std::string &nick) const
     return false;
 }
 
-void Server::sendError(Client &client, const std::string &code, const std::string &msg)
+void Server::sendMsg(Client &client, const std::string &code, const std::string &msg)
 {
     std::string nick = client.nick.empty() ? "*" : client.nick;
     std::string err = ":ircserv " + code + " " + nick + " " + msg + "\r\n";
@@ -357,7 +352,7 @@ void Server::broadcastToChannel(Channel &chan, const std::string &msg)
 		if (bytesSent < 0)
 		{
 			std::cerr << "Send failed for fd " << fd << std::endl;
-			removeClient(fd);
+			// removeClient(fd);
 		}
 	}
 }
@@ -369,7 +364,7 @@ void Server::handleJoin(Client &client, std::istringstream &iss)
     iss >> channelName >> key;
     if (channelName.empty() || channelName[0] != '#')
     {
-        sendError(client, ERR_NOSUCHCHANNEL, channelName + " :No such channel");
+        sendMsg(client, ERR_NOSUCHCHANNEL, channelName + " :No such channel");
         return;
     }
 
@@ -378,26 +373,26 @@ void Server::handleJoin(Client &client, std::istringstream &iss)
     // 이미 채널에 가입되어 있는지 체크
     if (chan.clients.find(client.fd) != chan.clients.end())
     {
-        sendError(client, ERR_USERONCHANNEL, " :is already on channel");
+        sendMsg(client, ERR_USERONCHANNEL, " :is already on channel");
         return;
     }
 
     // invite-only 체크
     if (chan.inviteOnly && chan.invited.find(client.fd) == chan.invited.end())
     {
-        sendError(client, ERR_INVITEONLYCHAN,"Invite only");
+        sendMsg(client, ERR_INVITEONLYCHAN,"Invite only");
         return;
     }
     
     if (!chan.key.empty() && chan.key != key)
     {
-        sendError(client, ERR_BADCHANNELKEY, "Bad Channel key");
+        sendMsg(client, ERR_BADCHANNELKEY, "Bad Channel key");
         return;
     }
     // 유저 제한 체크 (+l)
     if (chan.userLimit > 0 && (size_t)chan.clients.size() >= chan.userLimit)
     {
-        sendError(client, ERR_CHANNELISFULL, "Channel is full");
+        sendMsg(client, ERR_CHANNELISFULL, "Channel is full");
         return;
     }
     chan.clients.insert(client.fd);
@@ -443,7 +438,7 @@ void Server::sendToChannel(const std::string &channel, const std::string &msg, i
             if (bytesSent < 0)
             {
                 std::cerr << "Send failed for fd " << fd << std::endl;
-                removeClient(fd);
+                // removeClient(fd);
             }
         }
     }
@@ -465,7 +460,7 @@ void Server::handlePrivmsg(Client &client, std::istringstream &iss)
 
     if (target.empty() || message.empty())
     {
-        sendError(client, ERR_NEEDMOREPARAMS, "PRIVMSG :NOT enough parameters");
+        sendMsg(client, ERR_NEEDMOREPARAMS, "PRIVMSG :NOT enough parameters");
         return;
     }
 
@@ -477,7 +472,7 @@ void Server::handlePrivmsg(Client &client, std::istringstream &iss)
 
         if (chan.clients.find(client.fd) == chan.clients.end())
         {
-            sendError(client, ERR_NOTONCHANNEL, target + "You are not on that channel");
+            sendMsg(client, ERR_NOTONCHANNEL, target + " :You are not on that channel");
             return;
         }
         std::string full = ":" + client.nick + " PRIVMSG " + target + " :" + message + "\r\n";
@@ -486,26 +481,20 @@ void Server::handlePrivmsg(Client &client, std::istringstream &iss)
     }
     else if (target[0] == '#')
     {
-        sendError(client, ERR_NOSUCHCHANNEL, target + " :No such channel");
+        sendMsg(client, ERR_NOSUCHCHANNEL, target + " :No such channel");
         return ;
     }
-    // 닉네임
-    std::map<int, Client>::iterator it;
-    for (it = _clients.begin(); it != _clients.end(); ++it)
-    {
-        if (it->second.nick == target)
-        {
-            std::string full = ":" + client.nick + " PRIVMSG " + target + " :" + message + "\r\n";
-            send(it->second.fd, full.c_str(), full.size(), 0);
-            return;
-        }
-        else
-        {
-            sendError(client, ERR_NOSUCHNICK, target + " :No such nick");
-            return;
-        }
-    }
 
+    // 닉네임
+    int targetFd = getFdByNick(target);
+    if (targetFd != -1)
+    {
+        std::string full = ":" + client.nick + " PRIVMSG " + target + " :" + message + "\r\n";
+        send(targetFd, full.c_str(), full.size(), 0);
+        return;
+    }
+    sendMsg(client, ERR_NOSUCHNICK, target + " :No such nick");
+    return;
 }
 
 void Server::handleMode(Client &client, const std::string &chanName, const std::string &modeStr, std::istringstream &iss)
@@ -513,14 +502,14 @@ void Server::handleMode(Client &client, const std::string &chanName, const std::
     std::map<std::string, Channel>::iterator it = _channels.find(chanName);
     if (it == _channels.end())
     {
-        sendError(client, ERR_NOSUCHCHANNEL, chanName + " :No such channel");
+        sendMsg(client, ERR_NOSUCHCHANNEL, chanName + " :No such channel");
         return;
     }
     Channel &chan = it->second;
 // operator 체크
     if (chan.operators.find(client.fd) == chan.operators.end())
     {
-        sendError(client, ERR_CHANOPRIVSNEEDED, "You're not channel operator");
+        sendMsg(client, ERR_CHANOPRIVSNEEDED, "You're not channel operator");
         return;
     }
 
@@ -536,7 +525,7 @@ void Server::handleMode(Client &client, const std::string &chanName, const std::
 
         if (!action)
         {
-            sendError(client, ERR_UNKNOWNMODE, " :is unknown mode char");
+            sendMsg(client, ERR_UNKNOWNMODE, " :is unknown mode char");
             return ;
         }
         switch (m)
@@ -555,12 +544,12 @@ void Server::handleMode(Client &client, const std::string &chanName, const std::
                 {
                     if (key.empty())
                     {
-                        sendError(client, ERR_NEEDMOREPARAMS, "MODE :Not enough parameters");
+                        sendMsg(client, ERR_NEEDMOREPARAMS, "MODE :Not enough parameters");
                         return;
                     }
                     if (key.length() > 32)
                     {
-                        sendError(client, ERR_INVALIDMODEPARAMS, "MODE :Invalid mode parameters");
+                        sendMsg(client, ERR_INVALIDMODEPARAMS, "MODE :Invalid mode parameters");
                         return;
                     }
                     chan.key = key;
@@ -575,13 +564,13 @@ void Server::handleMode(Client &client, const std::string &chanName, const std::
                 iss >> nick;
                 if (nick.empty())
                 {
-                    sendError(client, ERR_NEEDMOREPARAMS, "MODE :Not enough parameters");
+                    sendMsg(client, ERR_NEEDMOREPARAMS, "MODE :Not enough parameters");
                     return;
                 }
                 int fd = getFdByNick(nick);
                 if (fd == -1)
                 {
-                    sendError(client, ERR_NOSUCHNICK, nick + " :No such nick");
+                    sendMsg(client, ERR_NOSUCHNICK, nick + " :No such nick");
                     return;
                 }
                 if (action == '+')
@@ -598,17 +587,17 @@ void Server::handleMode(Client &client, const std::string &chanName, const std::
                 iss >> limit;
                 if (!limit)
                 {
-                    sendError(client, ERR_NEEDMOREPARAMS, "MODE :Not enough parameters");
+                    sendMsg(client, ERR_NEEDMOREPARAMS, "MODE :Not enough parameters");
                     return;
                 }
                 if (limit <= 0)
                 {
-                    sendError(client, ERR_INVALIDMODEPARAMS, "MODE :Invalid mode parameters");
+                    sendMsg(client, ERR_INVALIDMODEPARAMS, "MODE :Invalid mode parameters");
                     return;
                 }
                 if (limit > 99999)
                 {
-                    sendError(client, ERR_INVALIDMODEPARAMS, "MODE :Invalid mode parameters");
+                    sendMsg(client, ERR_INVALIDMODEPARAMS, "MODE :Invalid mode parameters");
                     return;
                 }
                 chan.userLimit = limit;
@@ -618,7 +607,7 @@ void Server::handleMode(Client &client, const std::string &chanName, const std::
             break;
             }
             default :
-                sendError(client, ERR_UNKNOWNMODE, " :is unknown mode char");
+                sendMsg(client, ERR_UNKNOWNMODE, " :is unknown mode char");
                 return;
         }
     }
@@ -642,78 +631,88 @@ void Server::handleKick(Client &client, std::istringstream &iss)
 {
     std::string chanName, nick;
     iss >> chanName >> nick;
-    if (chanName.empty() || nick.empty()) {
-        sendError(client, ERR_NEEDMOREPARAMS, "KICK :NOT enough parameters");
+
+    if (chanName.empty() || nick.empty())
+    {
+        sendMsg(client, ERR_NEEDMOREPARAMS, "KICK :Not enough parameters");
         return;
     }
 
     std::map<std::string, Channel>::iterator it = _channels.find(chanName);
-    if (it == _channels.end()) {
-        sendError(client, ERR_NOSUCHCHANNEL, chanName + " : No such channel");
+    if (it == _channels.end())
+    {
+        sendMsg(client, ERR_NOSUCHCHANNEL, chanName + " :No such channel");
         return;
     }
+
     Channel &chan = it->second;
 
-    // operator 체크
-    if (chan.operators.find(client.fd) == chan.operators.end()) {
-        sendError(client, ERR_CHANOPRIVSNEEDED, "You're not channel operator");
+    if (chan.operators.find(client.fd) == chan.operators.end())
+    {
+        sendMsg(client, ERR_CHANOPRIVSNEEDED, chanName + " :You're not channel operator");
         return;
     }
 
     int fd = getFdByNick(nick);
-    if (fd == -1 || chan.clients.find(fd) == chan.clients.end()) {
-        sendError(client, ERR_NOSUCHNICK, nick + " : No such nick");
+    if (fd == -1 || chan.clients.find(fd) == chan.clients.end())
+    {
+        sendMsg(client, ERR_NOSUCHNICK, nick + " :No such nick in channel");
         return;
     }
 
-    _clients[fd].joinedChannels.erase(chanName);
-    sendToChannel(chanName, ":" + client.nick + " KICK " + chanName + " " + nick + "\r\n", client.fd);
+    // KICK 채널 전체 + kick 당한 유저
+    std::string msg = ":" + client.nick + " KICK " + chanName + " " + nick + "\r\n";
+    broadcastToChannel(chan, msg);
+    // send(fd, msg.c_str(), msg.size(), 0);
 
-    // 클라이언트 제거
+    // 채널에서만 제거
     chan.clients.erase(fd);
-    _clients[fd].joinedChannels.erase(chanName);
+    chan.operators.erase(fd);
     chan.invited.erase(fd);
+    _clients[fd].joinedChannels.erase(chanName);
 
-    // 채널이 비어있으면 삭제
+    // 채널 비었으면 삭제
     if (chan.clients.empty())
         _channels.erase(chanName);
 }
+
 
 void Server::handleInvite(Client &client, std::istringstream &iss)
 {
     std::string nick, chanName;
     iss >> nick >> chanName;
     if (nick.empty() || chanName.empty()) {
-        sendError(client, ERR_NEEDMOREPARAMS, "INVITE :NOT enough parameters");
+        sendMsg(client, ERR_NEEDMOREPARAMS, "INVITE :NOT enough parameters");
         return;
     }
 
     std::map<std::string, Channel>::iterator it = _channels.find(chanName);
     if (it == _channels.end()) {
-        sendError(client, ERR_NOSUCHCHANNEL, chanName + " : No such channel");
+        sendMsg(client, ERR_NOSUCHCHANNEL, chanName + " : No such channel");
         return;
     }
     Channel &chan = it->second;
 
     // operator 체크
     if (chan.operators.find(client.fd) == chan.operators.end()) {
-        sendError(client, ERR_CHANOPRIVSNEEDED, "You're not channel operator");
+        sendMsg(client, ERR_CHANOPRIVSNEEDED, "You're not channel operator");
         return;
     }
 
     int fd = getFdByNick(nick);
     if (fd == -1) {
-        sendError(client, ERR_NOSUCHNICK, nick + "No such nick");
+        sendMsg(client, ERR_NOSUCHNICK, nick + "No such nick");
         return;
     }
 
-    // 3.초대할 대상이 이미 채널에 있는지 확인
+    // 초대할 대상이 이미 채널에 있는지 확인
     if (chan.clients.find(fd) != chan.clients.end()) {
-        sendError(client, ERR_USERONCHANNEL, nick + " " + chanName + " :is already on channel");
+        sendMsg(client, ERR_USERONCHANNEL, nick + " " + chanName + ":is already on channel");
         return;
     }
 
     chan.invited.insert(fd); // 초대 목록에 추가
+    sendMsg(client, RPL_INVITING, nick + " " + chanName);
     std::string msg = ":" + client.nick + " INVITE " + nick + " :" + chanName + "\r\n";
     send(fd, msg.c_str(), msg.size(), 0);
 }
@@ -723,13 +722,13 @@ void Server::handleTopic(Client &client, std::istringstream &iss)
     std::string chanName;
     iss >> chanName;
     if (chanName.empty()) {
-        sendError(client, ERR_NEEDMOREPARAMS, "TOPIC :NOT enough parameters");
+        sendMsg(client, ERR_NEEDMOREPARAMS, "TOPIC :NOT enough parameters");
         return;
     }
 
     std::map<std::string, Channel>::iterator it = _channels.find(chanName);
     if (it == _channels.end()) {
-        sendError(client, ERR_NOSUCHCHANNEL, chanName + " : No such channel");
+        sendMsg(client, ERR_NOSUCHCHANNEL, chanName + " : No such channel");
         return;
     }
     Channel &chan = it->second;
@@ -752,7 +751,7 @@ void Server::handleTopic(Client &client, std::istringstream &iss)
     // topic 변경
     if (chan.topicRestricted && chan.operators.find(client.fd) == chan.operators.end())
     {
-        sendError(client, ERR_CHANOPRIVSNEEDED, "You're not channel operator");
+        sendMsg(client, ERR_CHANOPRIVSNEEDED, "You're not channel operator");
         return;
     }
 

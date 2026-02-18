@@ -7,6 +7,9 @@
 #include "Client.hpp"
 #include "Channel.hpp"
 
+#define RPL_WELCOME "001"
+#define RPL_INVITING "341"
+
 #define ERR_UNKNOWNCOMMAND "421"
 
 #define ERR_NEEDMOREPARAMS "461"
@@ -48,7 +51,7 @@ private:
     void handleClientData(int fd);
 	void processCommand (Client &client, const std::string &message);
     void removeClient(int fd);
-    void sendError(Client &client, const std::string &code, const std::string &msg);
+    void sendMsg(Client &client, const std::string &code, const std::string &msg);
     void handleJoin(Client &client, std::istringstream &iss);
     Channel& getOrCreateChannel(const std::string &name);
     void broadcastToChannel(Channel &chan, const std::string &msg);
