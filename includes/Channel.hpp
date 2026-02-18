@@ -15,5 +15,5 @@ class Channel
         std::set<int> operators;// 운영자 fd 저장 및 권한 (o)
         std::string topic;
 
-        Channel(const std::string &name) : name(name), userLimit(0), topicRestricted(false){}
+        Channel(const std::string &name) : name(name), userLimit(0), inviteOnly(false), topicRestricted(false){}
 };

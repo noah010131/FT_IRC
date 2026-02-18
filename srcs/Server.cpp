@@ -7,15 +7,13 @@
 #include <fcntl.h>
 #include <cerrno>
 #include <sstream>
+#include <cstdlib>
 
 Server* Server::_instance = NULL;
 
 void handleSignal(int sig)
 {
     (void)sig;
-    if (Server::_instance)
-        Server::_instance->shutdown();
-    std::exit(0);
 }
 
 // 안전 종료
@@ -30,7 +28,11 @@ void Server::shutdown()
         send(fd, quitMsg.c_str(), quitMsg.size(), 0);
         close(fd);
     }
-
+	if (_listenFd != -1)
+	{
+        close(_listenFd);
+        _listenFd = -1;
+    }
     _clients.clear();
     _channels.clear();
     _pfds.clear();
@@ -77,6 +79,7 @@ Server::Server(int port, const std::string& password)
 
 	/* pollfd 구조체 초기화 */
     pollfd pfd;
+	memset(&pfd, 0, sizeof(pfd));
     pfd.fd = _listenFd;
     pfd.events = POLLIN;
     _pfds.push_back(pfd);
@@ -92,8 +95,12 @@ void Server::run() {
 	/* &_pfds[0]: 파일 디스크립터 배열 */
 	/* _pfds.size(): 파일 디스크립터 배열 크기 */
 	/* -1: 블로킹 모드 */
-    while (true) {
-        if (poll(&_pfds[0], _pfds.size(), -1) < 0)
+    while (true)
+	{
+		int poll_res = poll(&_pfds[0], _pfds.size(), -1);
+		if (poll_res < 0 && errno == EINTR)
+            break;
+        if (poll_res < 0)
             throw std::runtime_error("poll failed");
 
         for (size_t i = 0; i < _pfds.size(); ++i) {
@@ -105,6 +112,7 @@ void Server::run() {
             }
         }
     }
+	this->shutdown();
 }
 
 void Server::acceptNewClient() {
@@ -120,6 +128,7 @@ void Server::acceptNewClient() {
 
 	/* pollfd 구조체 초기화 */
     pollfd pfd;
+	memset(&pfd, 0, sizeof(pfd));
     pfd.fd = clientFd;
     pfd.events = POLLIN;
     _pfds.push_back(pfd);
@@ -487,10 +496,8 @@ void Server::handlePrivmsg(Client &client, std::istringstream &iss)
     std::getline(iss, message);
 	
 
-    if (message.size() > 0 && message[0] == ' ')
-        message.erase(0, 1);
-	if (message.size() > 0 && message[0] == ':')
-        message.erase(0, 1);
+    if (message.size() > 0 && message[0] == ' ') message.erase(0, 1);
+	if (message.size() > 0 && message[0] == ':') message.erase(0, 1);
 
     if (target.empty() || message.empty())
     {
