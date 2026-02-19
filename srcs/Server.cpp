@@ -9,11 +9,12 @@
 #include <sstream>
 #include <cstdlib>
 
-Server* Server::_instance = NULL;
+bool Server::stopFlag = false;
 
 void handleSignal(int sig)
 {
     (void)sig;
+    Server::stopFlag = true;
 }
 
 // 안전 종료
@@ -87,7 +88,6 @@ Server::Server(int port, const std::string& password)
 
 void Server::run() {
 
-    _instance = this;
     signal(SIGPIPE, SIG_IGN);
     signal(SIGINT, handleSignal);
     signal(SIGTERM, handleSignal);
@@ -95,21 +95,43 @@ void Server::run() {
 	/* &_pfds[0]: 파일 디스크립터 배열 */
 	/* _pfds.size(): 파일 디스크립터 배열 크기 */
 	/* -1: 블로킹 모드 */
-    while (true)
+    while (!stopFlag)
 	{
 		int poll_res = poll(&_pfds[0], _pfds.size(), -1);
 		if (poll_res < 0 && errno == EINTR)
-            break;
+            continue;
         if (poll_res < 0)
             throw std::runtime_error("poll failed");
 
-        for (size_t i = 0; i < _pfds.size(); ++i) {
-            if (_pfds[i].revents & POLLIN) {
+        for (size_t i = 0; i < _pfds.size(); )
+        {
+            bool client_removed = false;
+            if (_pfds[i].revents & (POLLERR | POLLHUP | POLLNVAL))
+            {
+                if (_pfds[i].fd == _listenFd) 
+                    throw std::runtime_error("Server socket error");
+                else 
+                {
+                    std::cout << "Socket error/hup on fd " << _pfds[i].fd << std::endl;
+                    removeClient(_pfds[i].fd);
+                    client_removed = true;
+                }
+            }
+            else if (_pfds[i].revents & POLLIN)
+            {
                 if (_pfds[i].fd == _listenFd)
                     acceptNewClient();
                 else
+                {
+                    int current_fd = _pfds[i].fd;
                     handleClientData(_pfds[i].fd);
+                    if (_clients.find(current_fd) == _clients.end()) // 클라이언트가 제거되었는지 확인
+                        client_removed = true;
+                }
             }
+            if (client_removed)
+                continue;
+            ++i;
         }
     }
 	this->shutdown();
@@ -185,13 +207,15 @@ void Server::handleClientData(int fd)
         std::string line = client.buffer.substr(0, pos);
         client.buffer.erase(0, pos + 1); // 처리한 부분 제거
 
-		// \r 제거 (IRC는 \r\n으로 끝남)
-		if (!line.empty() && line[line.size() - 1] == '\r')
-			line.erase(line.size() - 1);
+		// 끝에 붙은 \r 뿐만 아니라 혹시 모를 제어 문자들을 더 확실히 제거
+        size_t last = line.find_last_not_of("\r\n");
+        if (last != std::string::npos)
+            line = line.substr(0, last + 1);
+        else
+            line.clear(); // 개행문자만 있는 경우
 
-		// 빈 라인은 무시
-		if (line.empty())
-			continue;
+        if (line.empty())
+            continue;
 
         // line = 실제 IRC 명령
         std::cout << "Received command from fd " << fd << ": " << line << std::endl;
@@ -206,6 +230,8 @@ void Server::processCommand(Client &client, const std::string &message) {
 
     if (cmd.empty())
         return;
+    for (size_t i = 0; i < cmd.length(); ++i)
+        cmd[i] = std::toupper(static_cast<unsigned char>(cmd[i]));
     if (cmd == "PASS")
     {
         if (client.passOk)
@@ -229,16 +255,44 @@ void Server::processCommand(Client &client, const std::string &message) {
     }
     else if (cmd == "NICK")
     {
-        std::string nick;
-        iss >> nick;
-        if (!isValidNick(nick, client))
+        if (!client.passOk)
+		{
+            sendMsg(client, ERR_NOTREGISTERED, ":You have not registered");
+			return;
+        }
+        std::string newNick;
+        iss >> newNick;
+
+        if (!isValidNick(newNick, client)) // 여기서 중복 체크(433)까지 한다고 가정
             return;
-        client.nick = nick;
+
+        // 이미 인증된 사용자가 이름을 바꾸는 경우에만 전파
+        if (!client.nick.empty() && client.authed)
+        {
+            std::string nickMsg = ":" + client.nick + "!" + client.user + "@127.0.0.1 NICK " + newNick + "\r\n";
+            broadcastToRelatedClients(client, nickMsg);
+        }
+
+        client.nick = newNick;
     }
     else if (cmd == "USER")
     {
-        std::string username;
-        iss >> username;
+        if (!client.passOk)
+		{
+            sendMsg(client, ERR_NOTREGISTERED, ":You have not registered");
+			return;
+        }
+        std::string username, hostname, servername, realname;
+        if (!(iss >> username >> hostname >> servername)) {
+            sendMsg(client, ERR_NEEDMOREPARAMS, "USER :Not enough parameters");
+            return;
+        }
+        std::getline(iss, realname);
+        if (realname.empty())
+        {
+            sendMsg(client, ERR_NEEDMOREPARAMS, "USER :Not enough parameters");
+            return;
+        }
         if (!isValidUser(username, client))
             return ;
         client.user = username;
@@ -249,11 +303,11 @@ void Server::processCommand(Client &client, const std::string &message) {
     else
     {
         if (!client.authed)
-		{
+        {
             sendMsg(client, ERR_NOTREGISTERED, ":You have not registered");
-			return;
+            return;
         }
-        else if (cmd == "JOIN")
+        if (cmd == "JOIN")
 			handleJoin(client, iss);
 		else if (cmd == "PRIVMSG")
 			handlePrivmsg(client, iss);
@@ -428,6 +482,44 @@ Channel& Server::getOrCreateChannel(const std::string &name)
     return it->second;
 }
 
+void Server::broadcastToRelatedClients(Client &client, const std::string &msg)
+{
+    std::set<int> targetFds;
+    
+    // 1. 자기 자신 포함 (본인의 변경 사항을 본인도 확인해야 함)
+    targetFds.insert(client.fd);
+
+    // 2. 참여 중인 채널 순회
+    for (std::set<std::string>::iterator it = client.joinedChannels.begin(); 
+         it != client.joinedChannels.end(); ++it) 
+    {
+        // operator[] 대신 find를 사용하여 안전하게 채널 객체 접근
+        std::map<std::string, Channel>::iterator mit = _channels.find(*it);
+        
+        if (mit != _channels.end()) 
+        {
+            Channel &chan = mit->second;
+            // 채널 내 모든 클라이언트 FD 수집 (set이라 중복 자동 제거)
+            for (std::set<int>::iterator cit = chan.clients.begin(); 
+                 cit != chan.clients.end(); ++cit) 
+            {
+                targetFds.insert(*cit);
+            }
+        }
+    }
+
+    // 3. 수집된 모든 대상에게 메시지 전송
+    for (std::set<int>::iterator tit = targetFds.begin(); 
+         tit != targetFds.end(); ++tit) 
+    {
+        // send 실패 여부를 가볍게 체크해주는 것이 좋습니다.
+        if (send(*tit, msg.c_str(), msg.size(), 0) == -1)
+        {
+            std::cerr << "Broadcast send failed to fd: " << *tit << std::endl;
+        }
+    }
+}
+
 void Server::broadcastToChannel(Channel &chan, const std::string &msg)
 {
 	for (std::set<int>::iterator it = chan.clients.begin();
@@ -548,19 +640,25 @@ void Server::sendToChannel(const std::string &channel, const std::string &msg, i
 void Server::handlePrivmsg(Client &client, std::istringstream &iss)
 {
     std::string target;
-    iss >> target;
+    if (!(iss >> target)) // target이 없으면 즉시 에러
+    {
+        sendMsg(client, ERR_NEEDMOREPARAMS, "PRIVMSG :Not enough parameters");
+        return;
+    }
 
     std::string message;
     std::getline(iss, message);
 	
-    size_t first_not_space = message.find_first_not_of(" ");
-    if (first_not_space != std::string::npos)
-        message.erase(0, first_not_space);
+    size_t first = message.find_first_not_of(" \r\n");
+    if (first == std::string::npos)
+        message = "";
+    else
+    {
+        size_t last = message.find_last_not_of(" \r\n");
+        message = message.substr(first, (last - first + 1));
+    }
 
-    if (!message.empty() && message[0] == ':')
-        message.erase(0, 1);
-
-    if (target.empty() || message.empty())
+    if (message.empty())
     {
         sendMsg(client, ERR_NEEDMOREPARAMS, "PRIVMSG :Not enough parameters");
         return;
@@ -601,6 +699,11 @@ void Server::handlePrivmsg(Client &client, std::istringstream &iss)
 
 void Server::handleMode(Client &client, const std::string &chanName, const std::string &modeStr, std::istringstream &iss)
 {
+    if (chanName.empty())
+    {
+        sendMsg(client, ERR_NEEDMOREPARAMS, "MODE :Not enough parameters");
+        return;
+    }
     std::map<std::string, Channel>::iterator it = _channels.find(chanName);
     if (it == _channels.end())
     {
@@ -614,7 +717,14 @@ void Server::handleMode(Client &client, const std::string &chanName, const std::
         sendMsg(client, ERR_CHANOPRIVSNEEDED, chanName + " :You're not channel operator");
         return;
     }
-
+    if (modeStr.empty())
+    {
+            // RPL_CHANNELMODEIS (324): 현재 채널의 모드 상태(예: +nt) 전송
+            sendMsg(client, RPL_CHANNELMODEIS, chanName + " " + chan.getModes());
+            // RPL_CREATIONTIME (329): 채널이 생성된 시간 전송 (일부 클라이언트에 필요)
+            sendMsg(client, RPL_CREATIONTIME, chanName + " " + chan.getCreationTime());
+            return;
+    }
     std::string appliedMode = ""; // 실제로 적용된 부호와 문자들 (+it-k 등)
     std::string appliedParams = ""; // 적용된 모드에 필요한 인자들 (pass 10 등)
     char action = '+'; // 기본값 설정

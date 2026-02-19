@@ -11,6 +11,9 @@
 #define RPL_WELCOME "001"
 #define RPL_INVITING "341"
 
+#define RPL_CHANNELMODEIS "324"
+#define RPL_CREATIONTIME "329"
+
 #define RPL_NOTOPIC "331"
 #define RPL_TOPIC "332"
 
@@ -61,8 +64,10 @@ public:
     void removeClient(int fd);
     void sendMsg(Client &client, const std::string &code, const std::string &msg);
     void handleJoin(Client &client, std::istringstream &iss);
+
     Channel& getOrCreateChannel(const std::string &name);
     void broadcastToChannel(Channel &chan, const std::string &msg);
+    void broadcastToRelatedClients(Client &client, const std::string &msg);
 
 	void handlePrivmsg(Client &client, std::istringstream &iss);
 	Client* findClientByNick(const std::string &nick);
@@ -79,5 +84,6 @@ public:
     void handleInvite(Client &client, std::istringstream &iss);
     void handleTopic(Client &client, std::istringstream &iss);
 
-    static Server* _instance;
+
+    static bool stopFlag;
 };

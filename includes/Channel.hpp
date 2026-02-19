@@ -1,6 +1,8 @@
 #pragma once
 #include <string>
 #include <set>
+#include <sstream>
+#include <ctime>
 
 class Channel
 {
@@ -14,6 +16,11 @@ class Channel
         std::set<int> clients;  // fd 저장
         std::set<int> operators;// 운영자 fd 저장 및 권한 (o)
         std::string topic;
+        time_t _createdAt; // 채널 생성 시간
 
-        Channel(const std::string &name) : name(name), userLimit(0), inviteOnly(false), topicRestricted(false){}
+        std::string getModes();
+        std::string getCreationTime();
+
+
+        Channel(const std::string &name) : name(name), userLimit(0), inviteOnly(false), topicRestricted(false), _createdAt(time(NULL)){}
 };
