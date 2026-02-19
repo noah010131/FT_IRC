@@ -12,7 +12,9 @@ std::string Channel::getModes() {
     }
     if (userLimit > 0) {
         modes += "l";
-        params += " " + std::to_string(userLimit);
+        std::stringstream ss;
+		ss << userLimit;
+		params += " " + ss.str();
     }
 
     // 만약 설정된 모드가 하나도 없어서 "+"만 남았다면?

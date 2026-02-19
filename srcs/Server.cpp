@@ -177,6 +177,15 @@ void Server::handleClientData(int fd)
 		removeClient(fd);
 		return;
 	}
+
+    std::string filtered;
+	filtered.reserve(bytes);
+	for (int i = 0; i < bytes; ++i)
+	{
+    	unsigned char c = buf[i];
+    	if ((c >= 32 && c <= 126) || c == '\r' || c == '\n')
+        	filtered += c;
+	}
     Client &client = _clients[fd];
 	const size_t MAX_BUFFER = 4096;
 
@@ -675,7 +684,9 @@ void Server::handlePrivmsg(Client &client, std::istringstream &iss)
         return;
     }
     if (!message.empty() && message[0] == ':')
+	{
         message.erase(0, 1);
+	}
 	// 채널 우선
 	std::map<std::string, Channel>::iterator chanIt = _channels.find(target);
     if (chanIt != _channels.end())
