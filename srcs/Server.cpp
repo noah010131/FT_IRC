@@ -17,18 +17,17 @@ void handleSignal(int sig)
     Server::stopFlag = true;
 }
 
-// 안전 종료
 void Server::shutdown()
 {
     std::cout << "\nShutting down server...\n";
 
-    for (std::map<int, Client>::iterator it = _clients.begin(); it != _clients.end(); ++it)
-    {
-        int fd = it->first;
-        std::string quitMsg = ":ircserv ERROR :Server shutting down\r\n";
-        send(fd, quitMsg.c_str(), quitMsg.size(), 0);
-        close(fd);
-    }
+    // for (std::map<int, Client>::iterator it = _clients.begin(); it != _clients.end(); ++it)
+    // {
+    //     int fd = it->first;
+    //     std::string quitMsg = ":ircserv ERROR :Server shutting down\r\n";
+    //     send(fd, quitMsg.c_str(), quitMsg.size(), 0);
+    //     close(fd);
+    // }
 	if (_listenFd != -1)
 	{
         close(_listenFd);
@@ -40,45 +39,28 @@ void Server::shutdown()
     std::cout << "Server terminated cleanly.\n";
 }
 
-Server::Server(int port, const std::string& password)
-    : _password(password) {
+Server::Server(int port, const std::string& password) : _password(password)
+{
 
-		/* socket 생성 */
-		/* AF_INET: IPv4 주소 체계 */
-		/* SOCK_STREAM: 연결 지향 서비스 */
-		/* 0: 기본 프로토콜 (TCP) */
     _listenFd = socket(AF_INET, SOCK_STREAM, 0);
     if (_listenFd < 0)
         throw std::runtime_error("socket failed");
-
-	/* SOL_SOCKET: 소켓 계층 */
-	/* SO_REUSEADDR: 주소 재사용 */
     int yes = 1;
     setsockopt(_listenFd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
 
-	/*구조체 초기화*/
     sockaddr_in addr;
     std::memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
-	/* INADDR_ANY: 모든 인터넷 주소 */
     addr.sin_addr.s_addr = INADDR_ANY;
-	/* htons: 호스트 바이트 순서를 네트워크 바이트 순서로 변환 */
     addr.sin_port = htons(port);
 
-	/* bind: 소켓을 특정 주소와 포트에 바인딩 */
     if (bind(_listenFd, (sockaddr*)&addr, sizeof(addr)) < 0)
         throw std::runtime_error("bind failed");
-
-	/* listen: 소켓을 수신 대기 상태로 전환 */
     if (listen(_listenFd, 128) < 0)
         throw std::runtime_error("listen failed");
 
-	/* fcntl: 파일 디스크립터 설정 */
-	/* F_SETFL: 파일 디스크립터 설정 모드 변경 */
-	/* O_NONBLOCK: 비블로킹 모드 */
     fcntl(_listenFd, F_SETFL, O_NONBLOCK);
 
-	/* pollfd 구조체 초기화 */
     pollfd pfd;
 	memset(&pfd, 0, sizeof(pfd));
     pfd.fd = _listenFd;
@@ -86,15 +68,12 @@ Server::Server(int port, const std::string& password)
     _pfds.push_back(pfd);
 }
 
-void Server::run() {
+void Server::run()
+{
 
     signal(SIGPIPE, SIG_IGN);
     signal(SIGINT, handleSignal);
     signal(SIGTERM, handleSignal);
-	/* poll: 소켓 상태 확인 */
-	/* &_pfds[0]: 파일 디스크립터 배열 */
-	/* _pfds.size(): 파일 디스크립터 배열 크기 */
-	/* -1: 블로킹 모드 */
     while (!stopFlag)
 	{
 		int poll_res = poll(&_pfds[0], _pfds.size(), -1);
@@ -129,6 +108,28 @@ void Server::run() {
                         client_removed = true;
                 }
             }
+            if (!client_removed && (_pfds[i].revents & POLLOUT))
+            {
+                Client &client = _clients[_pfds[i].fd];
+                if (!client.msgBuffer.empty())
+                {
+                    int sent = send(client.fd, client.msgBuffer.c_str(), client.msgBuffer.size(), 0);
+                    if (sent > 0)
+                        client.msgBuffer.erase(0, sent);
+                    else if (sent < 0)
+                    {
+                        if (errno != EWOULDBLOCK && errno != EAGAIN)
+                        {
+                            removeClient(_pfds[i].fd);
+                            client_removed = true; // 루프 제어용 플래그
+                            std::cerr << "Send error on fd " << client.fd << std::endl;
+                        }
+                    }
+                    // 더 이상 보낼 게 없으면 POLLOUT 감시 해제 (자원 절약)
+                    if (client.msgBuffer.empty())
+                        _pfds[i].events &= ~POLLOUT;
+                }
+            }
             if (client_removed)
                 continue;
             ++i;
@@ -140,24 +141,18 @@ void Server::run() {
 void Server::acceptNewClient() {
     sockaddr_in clientAddr;
     socklen_t len = sizeof(clientAddr);
-	/* accept: 클라이언트 연결 요청 수락 */
     int clientFd = accept(_listenFd, (sockaddr*)&clientAddr, &len);
-	/* 클라이언트 연결 요청 수락 실패 */
     if (clientFd < 0)
         return;
 
     fcntl(clientFd, F_SETFL, O_NONBLOCK);
 
-	/* pollfd 구조체 초기화 */
     pollfd pfd;
 	memset(&pfd, 0, sizeof(pfd));
     pfd.fd = clientFd;
     pfd.events = POLLIN;
     _pfds.push_back(pfd);
-
-	/* 클라이언트 정보 저장 */
     _clients.insert(std::make_pair(clientFd, Client(clientFd)));
-
     std::cout << "New client connected: " << clientFd << std::endl;
 }
 
@@ -166,7 +161,6 @@ void Server::handleClientData(int fd)
     char buf[512]; // IRC 최대 길이 미만
     int bytes = recv(fd, buf, sizeof(buf) - 1, 0);
 
-    // 연결 종료
     if (bytes == 0)
     {
 		std::cout << "Client disconnected: " << fd << std::endl;
@@ -183,11 +177,7 @@ void Server::handleClientData(int fd)
 		removeClient(fd);
 		return;
 	}
-	
-
-    //buf[bytes] = '\0';
     Client &client = _clients[fd];
-
 	const size_t MAX_BUFFER = 4096;
 
 	if (client.buffer.size() + bytes > MAX_BUFFER)
@@ -196,28 +186,20 @@ void Server::handleClientData(int fd)
 		removeClient(fd);
 		return;
 	}
-	
-    //client.buffer += buf; // 기존 버퍼에 누적
     client.buffer.append(buf, bytes);
-	
 	size_t pos;
 
 	while ((pos = client.buffer.find("\n")) != std::string::npos)
     {
         std::string line = client.buffer.substr(0, pos);
-        client.buffer.erase(0, pos + 1); // 처리한 부분 제거
-
-		// 끝에 붙은 \r 뿐만 아니라 혹시 모를 제어 문자들을 더 확실히 제거
+        client.buffer.erase(0, pos + 1);
         size_t last = line.find_last_not_of("\r\n");
         if (last != std::string::npos)
             line = line.substr(0, last + 1);
         else
-            line.clear(); // 개행문자만 있는 경우
-
+            line.clear();
         if (line.empty())
             continue;
-
-        // line = 실제 IRC 명령
         std::cout << "Received command from fd " << fd << ": " << line << std::endl;
 		processCommand(client, line);
 	}
@@ -426,11 +408,19 @@ bool Server::isValidUser(const std::string& user, Client &client)
 void Server::sendMsg(Client &client, const std::string &code, const std::string &msg)
 {
     std::string nick = client.nick.empty() ? "*" : client.nick;
-    std::string err = ":ircserv " + code + " " + nick + " " + msg + "\r\n";
-    if (err.size() > 510)
-        err = err.substr(0, 510);
-    if (send(client.fd, err.c_str(), err.size(), 0) < 0)
-        removeClient(client.fd);
+    std::string reponse = ":ircserv " + code + " " + nick + " " + msg + "\r\n";
+    if (reponse.size() > 510)
+        reponse = reponse.substr(0, 510);
+
+    client.msgBuffer += reponse;
+    for (size_t i = 0; i < _pfds.size(); ++i)
+    {
+        if (_pfds[i].fd == client.fd)
+        {
+            _pfds[i].events |= POLLOUT; // POLLOUT 이벤트 추가
+            break;
+        }
+    }
 }
 
 void Server::removeClient(int fd)
@@ -514,10 +504,17 @@ void Server::broadcastToRelatedClients(Client &client, const std::string &msg)
     for (std::set<int>::iterator tit = targetFds.begin(); 
          tit != targetFds.end(); ++tit) 
     {
-        // send 실패 여부를 가볍게 체크해주는 것이 좋습니다.
-        if (send(*tit, msg.c_str(), msg.size(), 0) == -1)
+        int fd = *tit;
+        _clients[fd].msgBuffer += msg;
+
+        // 해당 FD의 POLLOUT 비트 활성화 (루프 순회)
+        for (size_t i = 0; i < _pfds.size(); ++i)
         {
-            std::cerr << "Broadcast send failed to fd: " << *tit << std::endl;
+            if (_pfds[i].fd == fd)
+            {
+                _pfds[i].events |= POLLOUT;
+                break;
+            }
         }
     }
 }
@@ -531,12 +528,18 @@ void Server::broadcastToChannel(Channel &chan, const std::string &msg)
 		++it;
 
 		int fd = *current;
-		int bytesSent = send(fd, msg.c_str(), msg.size(), 0);
-		if (bytesSent < 0)
-		{
-			std::cerr << "Send failed for fd " << fd << std::endl;
-			// removeClient(fd);
-		}
+        
+		_clients[fd].msgBuffer += msg;
+
+        // 2. 해당 유저의 POLLOUT 플래그 활성화
+        for (size_t i = 0; i < _pfds.size(); ++i)
+        {
+            if (_pfds[i].fd == fd)
+            {
+                _pfds[i].events |= POLLOUT;
+                break;
+            }
+        }
 	}
 }
 
@@ -628,11 +631,17 @@ void Server::sendToChannel(const std::string &channel, const std::string &msg, i
         int fd = *current;
         if (fd != exceptFd)
         {
-            int bytesSent = send(fd, msg.c_str(), msg.size(), 0);
-            if (bytesSent < 0)
+            // 직접 send 대신 버퍼에 쌓기
+            _clients[fd].msgBuffer += msg;
+
+            // 해당 FD의 POLLOUT 비트 활성화
+            for (size_t i = 0; i < _pfds.size(); ++i)
             {
-                std::cerr << "Send failed for fd " << fd << std::endl;
-                // removeClient(fd);
+                if (_pfds[i].fd == fd)
+                {
+                    _pfds[i].events |= POLLOUT;
+                    break;
+                }
             }
         }
     }
@@ -665,7 +674,8 @@ void Server::handlePrivmsg(Client &client, std::istringstream &iss)
         sendMsg(client, ERR_NEEDMOREPARAMS, "PRIVMSG :Not enough parameters");
         return;
     }
-
+    if (!message.empty() && message[0] == ':')
+        message.erase(0, 1);
 	// 채널 우선
 	std::map<std::string, Channel>::iterator chanIt = _channels.find(target);
     if (chanIt != _channels.end())
@@ -692,8 +702,16 @@ void Server::handlePrivmsg(Client &client, std::istringstream &iss)
     if (targetFd != -1)
     {
         std::string full = ":" + client.nick + " PRIVMSG " + target + " :" + message + "\r\n";
-        send(targetFd, full.c_str(), full.size(), 0);
-        return;
+        _clients[targetFd].msgBuffer += full;
+        for (size_t i = 0; i < _pfds.size(); ++i)
+        {
+            if (_pfds[i].fd == targetFd)
+            {
+                _pfds[i].events |= POLLOUT;
+                break;
+            }
+        }
+        return ;
     }
     sendMsg(client, ERR_NOSUCHNICK, target + " :No such nick/channel");
     return;
@@ -917,7 +935,6 @@ void Server::handleKick(Client &client, std::istringstream &iss)
     // KICK 채널 전체 + kick 당한 유저
     std::string msg = ":" + client.nick + " KICK " + chanName + " " + nick + "\r\n";
     broadcastToChannel(chan, msg);
-    // send(fd, msg.c_str(), msg.size(), 0);
 
     // 채널에서만 제거
     chan.clients.erase(fd);
@@ -968,7 +985,13 @@ void Server::handleInvite(Client &client, std::istringstream &iss)
     chan.invited.insert(fd); // 초대 목록에 추가
     sendMsg(client, RPL_INVITING, nick + " " + chanName);
     std::string msg = ":" + client.nick + " INVITE " + nick + " :" + chanName + "\r\n";
-    send(fd, msg.c_str(), msg.size(), 0);
+    _clients[fd].msgBuffer += msg;
+    for (size_t i = 0; i < _pfds.size(); ++i) {
+        if (_pfds[i].fd == fd) {
+            _pfds[i].events |= POLLOUT;
+            break;
+        }
+    }
 }
 
 void Server::handleTopic(Client &client, std::istringstream &iss)
