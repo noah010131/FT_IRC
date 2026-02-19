@@ -798,7 +798,7 @@ void Server::handleKick(Client &client, std::istringstream &iss)
     int fd = getFdByNick(nick);
     if (fd == -1 || chan.clients.find(fd) == chan.clients.end())
     {
-        sendMsg(client, ERR_USERNOTINCHANNEL, nick + " :They aren't on that channel");
+        sendMsg(client, ERR_USERNOTINCHANNEL, nick + " " + chanName + " :They aren't on that channel");
         return;
     }
 
