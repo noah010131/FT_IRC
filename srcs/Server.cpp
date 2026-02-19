@@ -296,6 +296,8 @@ void Server::processCommand(Client &client, const std::string &message) {
         if (!isValidUser(username, client))
             return ;
         client.user = username;
+        if (realname[1] == ':') client.realname = realname.substr(2);
+        else client.realname = realname.substr(1);
         client.authed = true;
 
         sendMsg(client, RPL_WELCOME, ":Welcome!");

@@ -13,6 +13,7 @@ class Client
         std::string buffer;
         std::string nick;
         std::string user;
+        std::string realname;
         bool authed;
     	bool passOk;
         std::set<std::string> joinedChannels;
