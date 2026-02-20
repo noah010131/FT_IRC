@@ -80,6 +80,7 @@ public:
     int getFdByNick(const std::string &nick);
     std::string getNickByFd(int fd);
 
+	void handlePing(Client &client, std::string token);
     void handleKick(Client &client, std::istringstream &iss);
     void handleInvite(Client &client, std::istringstream &iss);
     void handleTopic(Client &client, std::istringstream &iss);

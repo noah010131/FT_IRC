@@ -244,6 +244,17 @@ void Server::processCommand(Client &client, const std::string &message) {
         }
         client.passOk = true;
     }
+	else if (cmd == "PING")
+	{
+		std::string token;
+		iss >> token;
+		if (token.empty())
+		{
+			sendMsg(client, ERR_NEEDMOREPARAMS, "PING :Not enough parameters");
+			return;
+		}
+		handlePing(client, token);
+	}
     else if (cmd == "NICK")
     {
         if (!client.passOk)
@@ -287,11 +298,25 @@ void Server::processCommand(Client &client, const std::string &message) {
         if (!isValidUser(username, client))
             return ;
         client.user = username;
+		if (hostname == "0" || hostname == "*")
+			hostname = "127.0.0.1";
+        client.hostname = hostname;
         if (realname[1] == ':') client.realname = realname.substr(2);
         else client.realname = realname.substr(1);
         client.authed = true;
 
-        sendMsg(client, RPL_WELCOME, ":Welcome!");
+        //sendMsg(client, RPL_WELCOME, ":Welcome!");
+		std::string msg = ":ircserv 001 " + client.nick + 
+                      " :Welcome to the Network, " + client.nick + "!" + client.user + "@" + client.hostname + "\r\n";
+		client.msgBuffer += msg;
+    	for (size_t i = 0; i < _pfds.size(); ++i)
+    	{
+        	if (_pfds[i].fd == client.fd)
+        	{
+        	    _pfds[i].events |= POLLOUT; // POLLOUT 이벤트 추가
+        	    break;
+        	}
+    	}
     }
     else
     {
@@ -310,7 +335,21 @@ void Server::processCommand(Client &client, const std::string &message) {
             iss >> chanName;
             std::string modeStr;
             iss >> modeStr;
-            handleMode(client, chanName, modeStr, iss);
+			if (chanName == client.nick && !modeStr.empty() && modeStr == "+i")
+			{
+				std::string msg = ":" + client.nick + "!" + client.user + "@" + client.hostname + " MODE " + client.nick + " :+i\r\n";
+				client.msgBuffer += msg;
+    			for (size_t i = 0; i < _pfds.size(); ++i)
+    			{
+        			if (_pfds[i].fd == client.fd)
+        			{
+        	    		_pfds[i].events |= POLLOUT; // POLLOUT 이벤트 추가
+        	    		break;
+        			}
+    			}
+			}
+			else 
+            	handleMode(client, chanName, modeStr, iss);
         }
         else if (cmd == "KICK")
             handleKick(client, iss);
@@ -417,11 +456,11 @@ bool Server::isValidUser(const std::string& user, Client &client)
 void Server::sendMsg(Client &client, const std::string &code, const std::string &msg)
 {
     std::string nick = client.nick.empty() ? "*" : client.nick;
-    std::string reponse = ":ircserv " + code + " " + nick + " " + msg + "\r\n";
-    if (reponse.size() > 510)
-        reponse = reponse.substr(0, 510);
+    std::string response = ":ircserv " + code + " " + nick + " " + msg + "\r\n";
+    if (response.size() > 510)
+        response = response.substr(0, 510);
 
-    client.msgBuffer += reponse;
+    client.msgBuffer += response;
     for (size_t i = 0; i < _pfds.size(); ++i)
     {
         if (_pfds[i].fd == client.fd)
@@ -550,6 +589,20 @@ void Server::broadcastToChannel(Channel &chan, const std::string &msg)
             }
         }
 	}
+}
+
+void Server::handlePing(Client &client, std::string token)
+{
+    std::string response = ":ircserv PONG ircserv : " + token + "\r\n";
+	client.msgBuffer += response;
+	for (size_t i = 0; i < _pfds.size(); ++i)
+    {
+        if (_pfds[i].fd == client.fd)
+        {
+            _pfds[i].events |= POLLOUT; // POLLOUT 이벤트 추가
+            break;
+        }
+    }
 }
 
 void Server::handleJoin(Client &client, std::istringstream &iss)

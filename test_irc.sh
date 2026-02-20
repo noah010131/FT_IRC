@@ -10,7 +10,6 @@ for i in {1..5}; do
         echo "JOIN #channel"
         sleep 1
         echo "PRIVMSG #channel :Hello, I am user$i"
-        sleep 9999
     ) | nc 127.0.0.1 6667 &
 done
 
