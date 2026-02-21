@@ -16,9 +16,6 @@ std::string Channel::getModes() {
 		ss << userLimit;
 		params += " " + ss.str();
     }
-
-    // 만약 설정된 모드가 하나도 없어서 "+"만 남았다면?
-    // 취향에 따라 "+"만 보내거나, 기본 모드(t 등)를 넣어줍니다.
     return modes + params;
 }
 
