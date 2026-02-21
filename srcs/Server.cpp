@@ -648,7 +648,7 @@ void Server::handleJoin(Client &client, std::istringstream &iss)
     if (chan.clients.size() == 1)
         chan.operators.insert(client.fd);
         
-    std::string joinMsg = ":" + client.nick + " JOIN " + channelName + "\r\n";
+    std::string joinMsg = ":" + client.nick + "!" + client.user + "@" + client.hostname + " JOIN " + channelName + "\r\n";
     broadcastToChannel(chan, joinMsg);
 
     if (!chan.topic.empty())
