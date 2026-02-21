@@ -222,8 +222,32 @@ void Server::processCommand(Client &client, const std::string &message) {
     if (cmd.empty())
         return;
     for (size_t i = 0; i < cmd.length(); ++i)
+	{
         cmd[i] = std::toupper(static_cast<unsigned char>(cmd[i]));
-    if (cmd == "PASS")
+	}
+
+	if (cmd == "CAP")
+	{
+		std::string param;
+		iss >> param;
+		// CAP LS 또는 CAP LS 302 등이 들어왔을 때
+		if (param.size() > 0 && param == "LS")
+		{
+			// 서버가 지원하는 기능이 없음을 빈 리스트(:)로 응답
+			std::string reply = ": ircserv CAP * LS :\r\n";
+			client.msgBuffer += reply;
+    		for (size_t i = 0; i < _pfds.size(); ++i)
+    		{
+        		if (_pfds[i].fd == client.fd)
+        		{
+        	    	_pfds[i].events |= POLLOUT; // POLLOUT 이벤트 추가
+        	    	break;
+        		}
+    		}
+		}
+		return; // CAP 명령어는 여기서 처리 끝
+	}
+    else if (cmd == "PASS")
     {
         if (client.passOk)
         {
