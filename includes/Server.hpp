@@ -46,7 +46,7 @@
 class Server
 {
 private:
-    int _listenFd;
+    int fd;
     std::vector<struct pollfd> _pfds;
     std::map<int, Client> _clients;
     std::map<std::string, Channel> _channels;
@@ -84,6 +84,6 @@ public:
     void handleKick(Client &client, std::istringstream &iss);
     void handleInvite(Client &client, std::istringstream &iss);
     void handleTopic(Client &client, std::istringstream &iss);
-    
+
     static bool stopFlag;
 };

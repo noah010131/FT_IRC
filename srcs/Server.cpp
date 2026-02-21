@@ -28,10 +28,10 @@ void Server::shutdown()
     //     send(fd, quitMsg.c_str(), quitMsg.size(), 0);
     //     close(fd);
     // }
-	if (_listenFd != -1)
+	if (fd != -1)
 	{
-        close(_listenFd);
-        _listenFd = -1;
+        close(fd);
+        fd = -1;
     }
     _clients.clear();
     _channels.clear();
@@ -42,11 +42,11 @@ void Server::shutdown()
 Server::Server(int port, const std::string& password) : _password(password)
 {
 
-    _listenFd = socket(AF_INET, SOCK_STREAM, 0);
-    if (_listenFd < 0)
+    fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0)
         throw std::runtime_error("socket failed");
     int yes = 1;
-    setsockopt(_listenFd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
 
     sockaddr_in addr;
     std::memset(&addr, 0, sizeof(addr));
@@ -54,16 +54,16 @@ Server::Server(int port, const std::string& password) : _password(password)
     addr.sin_addr.s_addr = INADDR_ANY;
     addr.sin_port = htons(port);
 
-    if (bind(_listenFd, (sockaddr*)&addr, sizeof(addr)) < 0)
+    if (bind(fd, (sockaddr*)&addr, sizeof(addr)) < 0)
         throw std::runtime_error("bind failed");
-    if (listen(_listenFd, 128) < 0)
+    if (listen(fd, 128) < 0)
         throw std::runtime_error("listen failed");
 
-    fcntl(_listenFd, F_SETFL, O_NONBLOCK);
+    fcntl(fd, F_SETFL, O_NONBLOCK);
 
     pollfd pfd;
 	memset(&pfd, 0, sizeof(pfd));
-    pfd.fd = _listenFd;
+    pfd.fd = fd;
     pfd.events = POLLIN;
     _pfds.push_back(pfd);
 }
@@ -87,7 +87,7 @@ void Server::run()
             bool client_removed = false;
             if (_pfds[i].revents & (POLLERR | POLLHUP | POLLNVAL))
             {
-                if (_pfds[i].fd == _listenFd) 
+                if (_pfds[i].fd == fd) 
                     throw std::runtime_error("Server socket error");
                 else 
                 {
@@ -98,7 +98,7 @@ void Server::run()
             }
             else if (_pfds[i].revents & POLLIN)
             {
-                if (_pfds[i].fd == _listenFd)
+                if (_pfds[i].fd == fd)
                     acceptNewClient();
                 else
                 {
@@ -141,7 +141,7 @@ void Server::run()
 void Server::acceptNewClient() {
     sockaddr_in clientAddr;
     socklen_t len = sizeof(clientAddr);
-    int clientFd = accept(_listenFd, (sockaddr*)&clientAddr, &len);
+    int clientFd = accept(fd, (sockaddr*)&clientAddr, &len);
     if (clientFd < 0)
         return;
 
