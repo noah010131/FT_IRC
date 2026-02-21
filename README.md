@@ -67,10 +67,7 @@ Modern IRC Specifications: Information regarding IRCv3 capabilities.
 
 In compliance with the 42 curriculum guidelines, AI (Gemini 3 Flash) was utilized in the following capacity:
 
-Debugging: Assisting in interpreting complex compiler errors (e.g., -Wmisleading-indentation) and Git corruption issues.
+> Debugging: Assisting in interpreting complex compiler errors (e.g., -Wmisleading-indentation) and Git corruption issues.
 
-Refactoring: Converting modern C++11/17 functions (like std::to_string) into C++98-compliant code using std::stringstream.
+> Edge Case Identification: Brainstorming potential issues with IRC command parsing, specifically regarding the handling of control characters (ANSI escape sequences) in raw socket buffers.
 
-Edge Case Identification: Brainstorming potential issues with IRC command parsing, specifically regarding the handling of control characters (ANSI escape sequences) in raw socket buffers.
-
-Template Generation: Assisting in the structural layout of this documentation.
