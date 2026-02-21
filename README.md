@@ -1,7 +1,7 @@
 This project has been created as part of the 42 curriculum by chanypar.
 
-#ft_irc: Internet Relay Chat Server
-##Description
+# ft_irc: Internet Relay Chat Server
+## Description
 ft_irc is a custom-built Internet Relay Chat (IRC) server developed in C++98. The goal of this project is to recreate the core functionalities of an IRC server, enabling real-time communication between multiple clients using the IRC protocol.
 
 The project focuses on:
@@ -12,14 +12,14 @@ Protocol Implementation: Adhering to the RFC 2812 (and related) standards to han
 
 Concurrency: Handling the complexity of partial data reception and command buffering for multiple users without data corruption.
 
-##Instructions
+## Instructions
 Compilation
 
 The project includes a Makefile that compiles the source files with the required flags (-Wall -Wextra -Werror -std=c++98). To compile the server, run:
 
-Bash
+``` Bash
 make
-Execution
+Execution ```
 
 The server requires two arguments: the port to listen on and the password required for clients to connect.
 
