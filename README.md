@@ -15,7 +15,7 @@ Protocol Implementation: Adhering to the RFC 2812 (and related) standards to han
 Concurrency: Handling the complexity of partial data reception and command buffering for multiple users without data corruption.
 
 ## Instructions
-Compilation
+### Compilation
 
 The project includes a Makefile that compiles the source files with the required flags (-Wall -Wextra -Werror -std=c++98). To compile the server, run:
 
