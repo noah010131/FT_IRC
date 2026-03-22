@@ -1,5 +1,31 @@
 This project has been created as part of the 42 curriculum by chanypar.
 
+<p align="center">
+  <a href="https://42.fr/en/homepage/" target="blank">
+    <img src="https://upload.wikimedia.org/wikipedia/commons/8/8d/42_Logo.svg" width="150" alt="42 Logo" />
+  </a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Campus-Paris-000000?style=for-the-badge&logo=target" />
+  <img src="https://img.shields.io/badge/Project-ft__irc-E96432?style=for-the-badge&logo=c%2B%2B" />
+  <img src="https://img.shields.io/badge/Standard-C++98-00599C?style=for-the-badge&logo=c%2B%2B" />
+</p>
+
+<p align="center">
+  <b>A Multithreaded-like IRC Server based on I/O Multiplexing.</b><br>
+  Implementing a fully functional Internet Relay Chat server from scratch using <code>poll()</code> or <code>epoll/kqueue</code>.
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Socket-Network-orange?style=flat-square&logo=dynamic-365">
+  <img src="https://img.shields.io/badge/I/O-Multiplexing-yellow?style=flat-square">
+  <img src="https://img.shields.io/badge/TCP/IP-Protocol-red?style=flat-square">
+  <img src="https://img.shields.io/badge/RFC-1459/2812-lightgrey?style=flat-square">
+</p>
+
+---
+
 # ft_irc: Internet Relay Chat Server
 
 
