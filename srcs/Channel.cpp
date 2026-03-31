@@ -1,18 +1,6 @@
-/* ************************************************************************** */
-/*                                                                            */
-/*                                                        :::      ::::::::   */
-/*   Channel.cpp                                        :+:      :+:    :+:   */
-/*                                                    +:+ +:+         +:+     */
-/*   By: chanypar <chanypar@student.42.fr>          +#+  +:+       +#+        */
-/*                                                +#+#+#+#+#+   +#+           */
-/*   Created: 2026/02/21 18:43:09 by chanypar          #+#    #+#             */
-/*   Updated: 2026/02/21 18:43:10 by chanypar         ###   ########.fr       */
-/*                                                                            */
-/* ************************************************************************** */
-
 #include "Channel.hpp"
 
-std::string Channel::getModes() {
+std::string Channel::getModes(bool isMember) {
     std::string modes = "+";
     std::string params = "";
 
@@ -20,6 +8,7 @@ std::string Channel::getModes() {
     if (topicRestricted) modes += "t";
     if (!key.empty()) {
         modes += "k";
+		if (isMember)
         params += " " + key;
     }
     if (userLimit > 0) {

@@ -1,15 +1,3 @@
-/* ************************************************************************** */
-/*                                                                            */
-/*                                                        :::      ::::::::   */
-/*   Channel.hpp                                        :+:      :+:    :+:   */
-/*                                                    +:+ +:+         +:+     */
-/*   By: chanypar <chanypar@student.42.fr>          +#+  +:+       +#+        */
-/*                                                +#+#+#+#+#+   +#+           */
-/*   Created: 2026/02/21 18:43:19 by chanypar          #+#    #+#             */
-/*   Updated: 2026/02/21 18:43:20 by chanypar         ###   ########.fr       */
-/*                                                                            */
-/* ************************************************************************** */
-
 #pragma once
 #include <string>
 #include <set>
@@ -20,17 +8,17 @@ class Channel
 {
     public:
         std::string name;
-        std::string key;        // 채널 비밀번호 (k)
-        size_t userLimit;       // 최대 유저 수 (l)
-        bool inviteOnly;     // 초대 전용 모드 (i)
-        std::set<int> invited; // 초대받은 사용자 
-        bool topicRestricted; // topic 권한 제한 모드 (t) 
-        std::set<int> clients;  // fd 저장
-        std::set<int> operators;// 운영자 fd 저장 및 권한 (o)
-        std::string topic;
-        time_t _createdAt; // 채널 생성 시간
+        std::string key;        // secret key channel (k)
+        size_t userLimit;       // maximum user on channel (l)
+        bool inviteOnly;     // invite only to access channel (i)
+        std::set<int> invited; // list invited members 
+        bool topicRestricted; // restricted topic (t) 
+        std::set<int> clients;  // list clients's fd
+        std::set<int> operators;// fd of operator (o)
+        std::string topic; // topic of channel
+        time_t _createdAt; // time of created channel
 
-        std::string getModes();
+        std::string getModes(bool isMember);
         std::string getCreationTime();
 
 
