@@ -18,13 +18,19 @@
 #include "Channel.hpp"
 
 #define RPL_WELCOME "001"
-#define RPL_INVITING "341"
+
+#define RPL_ENDOFWHO "315"
+#define RPL_ENDOFWHOIS "318"
 
 #define RPL_CHANNELMODEIS "324"
+#define RPL_INVITING "341"
 #define RPL_CREATIONTIME "329"
 
 #define RPL_NOTOPIC "331"
 #define RPL_TOPIC "332"
+
+#define RPL_NAMREPLY "353"
+#define RPL_ENDOFNAMES "366"
 
 #define ERR_UNKNOWNCOMMAND "421"
 

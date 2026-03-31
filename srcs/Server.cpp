@@ -353,14 +353,14 @@ void Server::processCommand(Client &client, const std::string &message) {
     		std::string target;
     		iss >> target;
     		std::string whoReply = target + " " + client.user + " " + client.hostname + " ircserv " + client.nick + " H :0 " + client.realname;
-    		sendMsg(client, "352", whoReply);
-    		sendMsg(client, "315", target + " :End of /WHO list");
+    		sendMsg(client, RPL_NAMREPLY, whoReply);
+    		sendMsg(client, RPL_ENDOFWHO, target + " :End of /WHO list");
 		}
 		else if (cmd == "WHOIS")
 		{
     		std::string target;
     		iss >> target;
-    		sendMsg(client, "318", target + " :End of /WHOIS list");
+    		sendMsg(client, RPL_ENDOFWHOIS, target + " :End of /WHOIS list");
 		}
 		else
             sendMsg(client, ERR_UNKNOWNCOMMAND, cmd + " :Unknown command");
@@ -654,9 +654,9 @@ void Server::handleJoin(Client &client, std::istringstream &iss)
     broadcastToChannel(chan, joinMsg);
 
 	if (chan.topic.empty())
-		sendMsg(client, "331", channelName + " :No topic is set");
+		sendMsg(client, RPL_NOTOPIC, channelName + " :No topic is set");
     else
-        sendMsg(client, "332", channelName + " :" + chan.topic);
+        sendMsg(client, RPL_TOPIC, channelName + " :" + chan.topic);
 
     std::string names = "";
 	for (std::set<int>::iterator it = chan.clients.begin(); it != chan.clients.end(); ++it)
@@ -666,8 +666,8 @@ void Server::handleJoin(Client &client, std::istringstream &iss)
 	        names += "@";
 	    names += getNickByFd(*it);
 	}
-	sendMsg(client, "353", "= " + channelName + " :" + names);
-	sendMsg(client, "366", channelName + " :End of /NAMES list");
+	sendMsg(client, RPL_NAMREPLY, "= " + channelName + " :" + names);
+	sendMsg(client, RPL_ENDOFNAMES , channelName + " :End of /NAMES list");
 }
 
 Client* Server::findClientByNick(const std::string &nick)
